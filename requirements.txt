@@ -1,0 +1,10 @@
+requests
+numpy
+pandas
+matplotlib
+TA-Lib
+python-dotenv
+schedule
+scipy
+websocket-client
+ccxt
