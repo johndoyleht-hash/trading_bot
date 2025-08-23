@@ -1,3 +1,9 @@
+# tests/test_regression_eurusd_2024.py
+import pytest
+pytestmark = pytest.mark.regression
+# ... rest of file ...
+
+# tests/test_regression_eurusd_2024.py
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(__file__))
 if ROOT not in sys.path:
