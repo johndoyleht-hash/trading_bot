@@ -1,4 +1,1 @@
-cat > .gitattributes <<'EOF'
-# Track clean datasets with Git LFS
 data/clean/*/*/*_clean.csv filter=lfs diff=lfs merge=lfs -text
-EOF
