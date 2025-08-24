@@ -1,1 +1,28 @@
-(paste the content above here)
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+venv/
+
+# Data & outputs
+# ignore everything under data/
+data/
+# ...except clean datasets
+!data/clean/
+!data/clean/*/
+!data/clean/*/*/
+!data/clean/*/*/*_clean.csv
+
+# ignore run outputs
+runs/
+*.log
+
+# GitHub temp files
+.github/*.swp
