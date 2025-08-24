@@ -7,12 +7,23 @@
 __pycache__/
 *.pyc
 venv/
+*.pyo
+*.pyd
+*.egg-info/
+
 
 # Data & outputs
 data/
+!data/clean/
+!data/clean/*/
+!data/clean/*/*/
 runs/
 *.csv
 *.log
 
 # GitHub
 .github/*.swp
+
+# Python junk
+__pycache__/
+*.pyc
