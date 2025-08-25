@@ -59,6 +59,17 @@ jobs:
       - name: Regression matrix
         run: pytest -q -m regression
 
+      # 👇 Add this step EXACTLY like this (indentation matters)
+      - name: Upload trades logs (artifacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trades-logs-regression
+          path: |
+            runs/**/trades_log_*.csv
+          if-no-files-found: ignore
+          retention-days: 7
+
   forward:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_regression == 'true' }}
     runs-on: ubuntu-latest
@@ -83,3 +94,14 @@ jobs:
           pip install pytest
       - name: Forward health
         run: pytest -q -m forward
+
+      # 👇 Add this step EXACTLY like this (indentation matters)
+      - name: Upload trades logs (artifacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trades-logs-forward
+          path: |
+            runs/**/trades_log_*.csv
+          if-no-files-found: ignore
+          retention-days: 7
