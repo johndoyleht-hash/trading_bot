@@ -1,3 +1,5 @@
+![tests](https://github.com/johndoyleht-hash/trading_bot/actions/workflows/test.yml/badge.svg)
+
 # trading_bot
 
 Automated backtesting for FX pairs.
