@@ -1,42 +1,63 @@
-name: Tests
-
+name: tests
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:  # lets you trigger manually
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      full_regression:
+        description: "Run full regression & forward?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false","true"]
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
-      - name: Run smoke tests
-        run: pytest -q -m "not regression"
+      - name: Smoke (fast)
+        run: pytest -q -m "not regression and not forward"
 
   regression:
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_regression == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+        lfs: true
+        fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
-      - name: Run regression tests
+      - name: Regression matrix
         run: pytest -q -m regression
+
+  forward:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_regression == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+        lfs: true
+        fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
+      - name: Forward health
+        run: pytest -q -m forward
