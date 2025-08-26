@@ -1,134 +1,81 @@
-name: forward_runs
+name: forward-runs
 
 on:
-  workflow_dispatch:
-    inputs:
-      verbose:
-        description: "Print extra logs?"
-        required: false
-        default: "false"
-        type: choice
-        options: ["false","true"]
+  workflow_dispatch: {}
 
 jobs:
   forward:
+    name: Run forward configs & collect artifacts
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
     steps:
-      - name: Checkout (with LFS)
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
-          # Minimal test tooling
-          pip install pytest pyyaml
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
 
-      - name: Show forward configs found
+      - name: Run all forward configs
+        shell: bash
         run: |
-          echo "Configs in configs/forward:"
-          ls -la configs/forward || true
-
-      - name: Run all forward configs (produce trades logs + stdout summaries)
-        env:
-          VERBOSE: ${{ github.event.inputs.verbose }}
-        run: |
-          set -eu
-
-          # Be quiet unless verbose is true
-          QFLAG=""
-          if [ "${VERBOSE:-false}" = "true" ]; then
-            set -x
-            QFLAG="-v"
-          fi
-
-          mkdir -p runs
-
-          # Loop over all forward YAMLs
+          set -euo pipefail
           shopt -s nullglob
-          found_any="false"
-          for cfg in configs/forward/*.yaml; do
-            found_any="true"
-            base="$(basename "$cfg")"
 
-            # Try to infer pair (first token) and year (first 20xx in the name)
-            pair_guess="$(echo "$base" | awk -F_ '{print toupper($1)}')"
-            year_guess="$(echo "$base" | grep -Eo '20[0-9]{2}' | head -n1)"
+          # Loop over every forward YAML like: configs/forward/eurusd_2024_forward.yaml
+          for cfg in configs/forward/*_forward.yaml; do
+            base="$(basename "$cfg")"                 # e.g., eurusd_2024_forward.yaml
+            pair_lower="${base%%_*}"                  # eurusd
+            rest="${base#*_}"                         # 2024_forward.yaml
+            year="${rest%%_*}"                        # 2024
+            pair_upper="$(echo "$pair_lower" | tr '[:lower:]' '[:upper:]')"
 
-            # Fallback: read PAIR:, YEAR: from YAML if present
-            if [ -z "${pair_guess}" ] || [ "${pair_guess}" = "FORWARD.YAML" ]; then
-              pair_guess="$(grep -E '^[[:space:]]*PAIR:' "$cfg" | head -n1 | awk '{print toupper($2)}' || true)"
-            fi
-            if [ -z "${year_guess}" ]; then
-              year_guess="$(grep -E '^[[:space:]]*YEAR:' "$cfg" | head -n1 | awk '{print $2}' || true)"
-            fi
-
-            if [ -z "${pair_guess}" ] || [ -z "${year_guess}" ]; then
-              echo "::warning::Skipping $cfg (could not infer PAIR/YEAR)"
-              continue
-            fi
-
-            echo "=== Running ${pair_guess} ${year_guess} with ${cfg} ==="
-
-            # Run the pair runner; do not fail the whole job if one pair/year fails
-            python3 scripts/baseline_pair_runner.py \
-              --pair "${pair_guess}" \
-              --year "${year_guess}" \
-              --config "${cfg}" || true
-
-            # Print a compact JSON summary for easy scraping
-            python3 scripts/print_summary.py \
-              --pair "${pair_guess}" \
-              --year "${year_guess}" || true
+            echo ""
+            echo "=== Running forward for $pair_upper $year ==="
+            python3 scripts/baseline_pair_runner.py --pair "$pair_upper" --year "$year" --config "$cfg"
+            python3 scripts/print_summary.py --pair "$pair_upper" --year "$year"
           done
 
-          if [ "${found_any}" = "false" ]; then
-            echo "::warning::No configs matched configs/forward/*.yaml"
-          fi
-
-      - name: Upload trades logs (CSV artifacts)
+      - name: Upload trades artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: forward_trades_logs
+          name: forward-trades-${{ github.run_id }}
+          if-no-files-found: ignore
           path: |
-            runs/*/*/*.csv
-          if-no-files-found: warn
-          retention-days: 7
+            runs/**/trades_log_*.csv
+            runs/live_sim/**/trades_*.csv
+            runs/live_sim/portfolio/**/combined_trades.csv
+            runs/live_sim/portfolio/**/equity_curve.csv
 
   forward_health:
-    runs-on: ubuntu-latest
+    name: Forward health (pairs + portfolio)
     needs: forward
-    timeout-minutes: 20
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with LFS)
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
-          # Add pytest + yaml
-          pip install pytest pyyaml
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
 
-      - name: Run forward health tests
+      - name: Run forward tests
         run: |
           pytest -q -m forward
+
+      - name: Run portfolio tests
+        run: |
+          pytest -q -m portfolio
