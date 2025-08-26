@@ -1,7 +1,12 @@
 name: forward-runs
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      full_forward:
+        description: "Run full forward + portfolio suite?"
+        required: false
+        default: "false"
 
 jobs:
   forward:
