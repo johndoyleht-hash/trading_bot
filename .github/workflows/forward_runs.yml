@@ -10,11 +10,22 @@ on:
 
 jobs:
   forward:
-    name: Run forward configs & collect artifacts
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout (with LFS)
         uses: actions/checkout@v4
+        with:
+          lfs: true          # <-- important
+          fetch-depth: 0
+
+      - name: Ensure LFS files are materialized
+        run: |
+          git lfs install
+          git lfs pull
+          git lfs checkout
+          # quick sanity: list size and show header of one CSV
+          ls -lh data/clean/*/*/*_clean.csv | head -n 10
+          head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -25,7 +36,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
 
       - name: Run all forward configs
         shell: bash
