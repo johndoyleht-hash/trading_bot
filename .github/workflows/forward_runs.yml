@@ -1,0 +1,82 @@
+name: forward_runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: "Show verbose runner logs?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # pull your LFS CSVs
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+          pip install pytest
+
+      - name: Run forward configs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Forward YAMLs:"
+          ls -1 configs/forward/*.yaml
+
+          # tiny helper: extract PAIR/YEAR from filename where possible; fallback to reading from YAML when needed
+          run_one () {
+            local cfg="$1"
+            # Try to parse pair/year from filename like gbpusd_2024_forward.yaml
+            local base="$(basename "$cfg")"
+            local pair="$(echo "$base" | awk -F_ '{print toupper($1)}')"
+            local year="$(echo "$base" | grep -Eo '[0-9]{4}' | head -n1)"
+
+            # If not parsed, try reading from YAML keys (PAIR / YEAR)
+            if [ -z "$year" ]; then
+              year="$(grep -E '^YEAR:' "$cfg" | awk '{print $2}' || true)"
+            fi
+            if [ -z "$pair" ] || [ "$pair" = "" ] || [ "$pair" = "FORWARD.YAML" ]; then
+              pair="$(grep -E '^PAIR:' "$cfg" | awk '{print toupper($2)}' || true)"
+            fi
+
+            if [ -z "$pair" ] || [ -z "$year" ]; then
+              echo "::warning::Could not determine pair/year for $cfg; skipping"
+              return 0
+            fi
+
+            echo "=== Running $pair $year with $cfg ==="
+            if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+              python3 scripts/baseline_pair_runner.py --pair "$pair" --year "$year" --config "$cfg" --verbose || true
+            else
+              python3 scripts/baseline_pair_runner.py --pair "$pair" --year "$year" --config "$cfg" || true
+            fi
+            python3 scripts/print_summary.py --pair "$pair" --year "$year" || true
+          }
+
+          for cfg in configs/forward/*.yaml; do
+            run_one "$cfg"
+          done
+
+      - name: Upload trades logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward_trades_logs
+          path: |
+            runs/**/trades_log_*.csv
+          if-no-files-found: warn
