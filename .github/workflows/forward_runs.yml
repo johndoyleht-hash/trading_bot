@@ -11,6 +11,8 @@ on:
 jobs:
   forward:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout (with LFS)
         uses: actions/checkout@v4
@@ -112,3 +114,6 @@ jobs:
             runs/live_sim/**/trades_*.csv
             runs/live_sim/portfolio/**/combined_trades.csv
             runs/live_sim/portfolio/**/equity_curve.csv
+git add .github/workflows/forward_runs.yml
+git commit -m "CI: add portfolio guard (PF≥1.20, DD≤7%) and tidy forward run"
+git push origin main
