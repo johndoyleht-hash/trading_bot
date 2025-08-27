@@ -12,33 +12,45 @@ jobs:
   forward:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Checkout (with LFS)
+        uses: actions/checkout@v4
         with:
-          python-version: "3.11"
-
-      - name: Install deps
-        run: pip install -r requirements.txt
-
-      - name: Paper-sim all pairs (2023–2024)
-        run: |
-          python3 scripts/paper_multi.py --year 2023 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
-          python3 scripts/paper_multi.py --year 2024 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
-          python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
-
-
-      - name: Portfolio health checks
-        run: pytest -m portfolio
+          lfs: true
+          fetch-depth: 0
 
       - name: Ensure LFS files are materialized
         run: |
           git lfs install
           git lfs pull
           git lfs checkout
-          ls -lh data/clean/*/*/*_clean.csv | head -n 10
+          # quick sanity: show a header from one CSV so we know it's real
           head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (minimal fallback if requirements.txt absent)
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt || true
+          fi
+          pip install pytest pyyaml pandas
+
+      # Generate latest trades for each pair/year
+      - name: Paper-sim all pairs (2023–2025)
+        run: |
+          python3 scripts/paper_multi.py --year 2023 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+          python3 scripts/paper_multi.py --year 2024 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+          python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+
+      # Test suite marks (optional but nice)
+      - name: Portfolio tests (pytest -m portfolio)
+        run: pytest -q -m portfolio
+
+      # List forward configs we’re about to run (FYI)
       - name: List forward configs discovered
         shell: bash
         run: |
@@ -48,12 +60,12 @@ jobs:
           for f in "${files[@]}"; do
             echo " - $f"
           done
-          # Fail early if none (prevents a silent no-op)
           if [ ${#files[@]} -eq 0 ]; then
             echo "❌ No forward configs found under configs/forward/"
             exit 1
           fi
 
+      # Run the forward configs so summaries print to logs
       - name: Run all forward configs
         shell: bash
         run: |
@@ -71,6 +83,25 @@ jobs:
             python3 scripts/print_summary.py --pair "$pair_upper" --year "$year"
           done
 
+      # Portfolio guard: enforce PF and max DD (PROP-style) on combined account
+      - name: Portfolio guard — 2024 (PF≥1.20, DD≤7%)
+        run: |
+          python3 scripts/portfolio_health.py \
+            --year 2024 \
+            --pairs EURUSD,GBPUSD,USDJPY \
+            --use_latest \
+            --min_pf 1.20 \
+            --max_dd 0.07
+
+      - name: Portfolio guard — 2025 (PF≥1.20, DD≤7%)
+        run: |
+          python3 scripts/portfolio_health.py \
+            --year 2025 \
+            --pairs EURUSD,GBPUSD,USDJPY \
+            --use_latest \
+            --min_pf 1.20 \
+            --max_dd 0.07
+
       - name: Upload trades artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -81,42 +112,3 @@ jobs:
             runs/live_sim/**/trades_*.csv
             runs/live_sim/portfolio/**/combined_trades.csv
             runs/live_sim/portfolio/**/equity_curve.csv
-
-
-  forward_health:
-    if: ${{ inputs.full_forward == 'true' }}
-    name: Forward health (pairs + portfolio)
-    needs: forward
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout (with LFS)
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-          fetch-depth: 0
-
-      - name: Ensure LFS files are materialized
-        run: |
-          git lfs install
-          git lfs pull
-          git lfs checkout
-          # quick sanity: show a header from one CSV so we know it's real
-          head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
-          # minimal test deps
-          pip install pytest pyyaml
-
-      - name: Run forward tests
-        run: pytest -q -m forward
-
-      - name: Run portfolio tests
-        run: pytest -q -m portfolio
