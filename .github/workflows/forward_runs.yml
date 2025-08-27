@@ -6,7 +6,7 @@ on:
       full_forward:
         description: "Run full forward + portfolio suite?"
         required: false
-        default: "false"
+        default: "true"
 
 jobs:
   forward:
@@ -15,27 +15,29 @@ jobs:
       - name: Checkout (with LFS)
         uses: actions/checkout@v4
         with:
-          lfs: true          # <-- important
+          lfs: true
           fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest gitpython
 
       - name: Ensure LFS files are materialized
         run: |
           git lfs install
           git lfs pull
           git lfs checkout
-          # quick sanity: list size and show header of one CSV
           ls -lh data/clean/*/*/*_clean.csv | head -n 10
           head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run all forward configs
         shell: bash
@@ -43,15 +45,13 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Loop over every forward YAML like: configs/forward/eurusd_2024_forward.yaml
           for cfg in configs/forward/*_forward.yaml; do
-            base="$(basename "$cfg")"                 # e.g., eurusd_2024_forward.yaml
-            pair_lower="${base%%_*}"                  # eurusd
-            rest="${base#*_}"                         # 2024_forward.yaml
-            year="${rest%%_*}"                        # 2024
+            base="$(basename "$cfg")"
+            pair_lower="${base%%_*}"
+            rest="${base#*_}"
+            year="${rest%%_*}"
             pair_upper="$(echo "$pair_lower" | tr '[:lower:]' '[:upper:]')"
 
-            echo ""
             echo "=== Running forward for $pair_upper $year ==="
             python3 scripts/baseline_pair_runner.py --pair "$pair_upper" --year "$year" --config "$cfg"
             python3 scripts/print_summary.py --pair "$pair_upper" --year "$year"
