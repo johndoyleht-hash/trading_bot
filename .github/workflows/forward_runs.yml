@@ -39,12 +39,26 @@ jobs:
           ls -lh data/clean/*/*/*_clean.csv | head -n 10
           head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
 
+      - name: List forward configs discovered
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(configs/forward/*_forward.yaml)
+          echo "Found ${#files[@]} forward config(s):"
+          for f in "${files[@]}"; do
+            echo " - $f"
+          done
+          # Fail early if none (prevents a silent no-op)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "❌ No forward configs found under configs/forward/"
+            exit 1
+          fi
+
       - name: Run all forward configs
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-
           for cfg in configs/forward/*_forward.yaml; do
             base="$(basename "$cfg")"
             pair_lower="${base%%_*}"
