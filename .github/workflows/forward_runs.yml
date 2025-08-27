@@ -87,8 +87,19 @@ jobs:
     needs: forward
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout (with LFS)
         uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Ensure LFS files are materialized
+        run: |
+          git lfs install
+          git lfs pull
+          git lfs checkout
+          # quick sanity: show a header from one CSV so we know it's real
+          head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1)
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -98,13 +109,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+          # minimal test deps
+          pip install pytest pyyaml
 
       - name: Run forward tests
-        run: |
-          pytest -q -m forward
+        run: pytest -q -m forward
 
       - name: Run portfolio tests
-        run: |
-          pytest -q -m portfolio
+        run: pytest -q -m portfolio
