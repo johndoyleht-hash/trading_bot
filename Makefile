@@ -69,3 +69,7 @@ lfs-verify:
 	  echo "== $$f =="; \
 	  git cat-file -p :$$f 2>/dev/null | sed -n "1,3p" || echo "(not staged)"; \
 	done'
+paper_multi:
+	python3 scripts/paper_multi.py --year $(year) --pairs $(pairs) --cfg_dir configs/forward
+portfolio:
+	python3 scripts/portfolio_health.py --year $(year) --pairs $(pairs) --use_latest
