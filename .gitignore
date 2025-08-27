@@ -26,3 +26,4 @@ runs/
 
 # GitHub temp files
 .github/*.swp
+.DS_Store
