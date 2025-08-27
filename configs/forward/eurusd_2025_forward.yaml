@@ -1,5 +1,3 @@
-# Forward config for EURUSD (2024)
-# Keep it minimal: only the knobs we forward-tuned elsewhere
 PAIR: EURUSD
 ATR_P_LOW: 0.26
 RSI_BUY_MAX: 33.0
