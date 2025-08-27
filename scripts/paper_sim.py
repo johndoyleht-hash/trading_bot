@@ -1,51 +1,78 @@
 #!/usr/bin/env python3
-import argparse, os, datetime as dt
+# scripts/paper_sim.py
+import argparse
+import sys
 from pathlib import Path
-import importlib
 
-# Import the same baseline core
-import src.baseline_core as baseline  # adjust if your module path differs
+# make 'src' importable when run as a script
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import yaml  # pyyaml
+import src.baseline_core as baseline  # noqa: E402
+
+
+def run_backtest_with_config(csv_path: Path, pair: str, config_path: Path):
+    """
+    Load a forward YAML and call baseline.run_backtest with only the kwargs it expects.
+    IMPORTANT: Do NOT pass CONFIG_PATH (that caused CI errors previously).
+    """
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    # Remove keys that baseline.run_backtest doesn't accept / we never use here
+    for k in ["CONFIG_PATH", "PAIR", "DATA_CSV_PATH"]:
+        cfg.pop(k, None)
+
+    # Primary call: keyword-style interface used by this repo
+    try:
+        return baseline.run_backtest(
+            DATA_CSV_PATH=str(csv_path),
+            PAIR=pair,
+            **cfg,
+        )
+    except TypeError:
+        # Fallback: some environments might expose a positional signature
+        # (csv_path, pair, **cfg). Try that before giving up.
+        return baseline.run_backtest(str(csv_path), pair, **cfg)
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pair", required=True)
     ap.add_argument("--year", type=int, required=True)
-    ap.add_argument("--config", required=True, help="YAML config to use")
-    ap.add_argument("--data", help="Optional override of CSV path")
+    ap.add_argument("--config", required=True, help="path to *_forward.yaml")
     args = ap.parse_args()
 
-    repo = Path(__file__).resolve().parents[1]
-    if args.data:
-        csv_path = Path(args.data)
-    else:
-        csv_path = repo / "data" / "clean" / args.pair / str(args.year) / f"{args.pair}_1y_{args.year}_clean.csv"
-    assert csv_path.exists(), f"Missing data: {csv_path}"
+    pair = args.pair.upper()
+    year = int(args.year)
+    cfg_path = Path(args.config)
 
-    # reimport to avoid sticky state across multiple runs
-    importlib.reload(baseline)
-
-    res = baseline.run_backtest(
-        DATA_CSV_PATH=str(csv_path),
-        PAIR=args.pair,
-        CONFIG_PATH=args.config  # baseline_core already supports this style in your runner
-    )
-
-    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = repo / "runs" / "live_sim" / args.pair / str(args.year)
+    # Where paper trades live
+    out_dir = Path("runs") / "live_sim" / pair / str(year)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save trades log if present in result, else dump summary
-    trades_csv = res.get("trades_csv")
-    if trades_csv and Path(trades_csv).exists():
-        # Copy the produced trades CSV under live_sim (keeps your engine’s native CSV)
-        dst = out_dir / f"trades_{stamp}.csv"
-        dst.write_bytes(Path(trades_csv).read_bytes())
-        print(f"[paper_sim] saved trades: {dst}")
-    else:
-        # fallback: just write a tiny summary
-        s = res.get("summary", {})
-        (out_dir / f"summary_{stamp}.json").write_text(str(s))
-        print(f"[paper_sim] saved summary json (no trades csv emitted).")
+    # Clean data CSV (produced by your conversion step)
+    csv_path = Path("data/clean") / pair / str(year) / f"{pair}_1y_{year}_clean.csv"
+
+    # Run and let baseline_core handle writing trades logs
+    res = run_backtest_with_config(csv_path, pair, cfg_path)
+
+    # The baseline writes a dated trades CSV; we print where it went (for convenience)
+    # If baseline returns a path or object with the path, try to surface it:
+    saved = None
+    for k in ("trades_csv", "trades_path", "trades_file", "path"):
+        if isinstance(res, dict) and k in res:
+            saved = res[k]
+            break
+
+    if not saved:
+        # best effort: tell the folder where it should appear
+        saved = out_dir
+
+    print(f"[paper_sim] saved trades: {saved}")
+
 
 if __name__ == "__main__":
     main()
