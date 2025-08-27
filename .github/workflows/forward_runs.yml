@@ -12,24 +12,24 @@ jobs:
   forward:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with LFS)
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-          fetch-depth: 0
-
+      - uses: actions/checkout@v3
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Paper-sim all pairs (2023–2024)
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest gitpython
+          python3 scripts/paper_multi.py --year 2023 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+          python3 scripts/paper_multi.py --year 2024 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+          python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+
+
+      - name: Portfolio health checks
+        run: pytest -m portfolio
 
       - name: Ensure LFS files are materialized
         run: |
@@ -82,7 +82,9 @@ jobs:
             runs/live_sim/portfolio/**/combined_trades.csv
             runs/live_sim/portfolio/**/equity_curve.csv
 
+
   forward_health:
+    if: ${{ inputs.full_forward == 'true' }}
     name: Forward health (pairs + portfolio)
     needs: forward
     runs-on: ubuntu-latest
