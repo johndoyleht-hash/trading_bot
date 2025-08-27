@@ -1,0 +1,12 @@
+# Forward config for AUDUSD (2023)
+PAIR: AUDUSD
+
+# Entry shaping (starter values)
+ATR_P_LOW: 0.26
+RSI_WINDOW: 6
+RSI_BUY_MAX: 33.0
+RSI_SELL_MIN: 66.0
+
+# Risk guards (explicit, override code defaults)
+MAX_DAILY_DD: 0.038
+MAX_TOTAL_DD: 0.07
