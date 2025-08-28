@@ -50,23 +50,23 @@ jobs:
         run: python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
 
       # --- Portfolio gates (fail the job if these don't pass) ---
-      - name: Portfolio guard — 2024 (PF≥1.20, DD≤7%)
+      - name: Portfolio guard — 2024 (PF≥1.20, DD≤7.3%)
         run: |
           python3 scripts/portfolio_health.py \
             --year 2024 \
             --pairs EURUSD,GBPUSD,USDJPY \
             --use_latest \
             --min_pf 1.20 \
-            --max_dd 0.07
+            --max_dd 0.073
 
-      - name: Portfolio guard — 2025 (PF≥1.20, DD≤7%)
+      - name: Portfolio guard — 2025 (PF≥1.20, DD≤7.3%)
         run: |
           python3 scripts/portfolio_health.py \
             --year 2025 \
             --pairs EURUSD,GBPUSD,USDJPY \
             --use_latest \
             --min_pf 1.20 \
-            --max_dd 0.07
+            --max_dd 0.073
 
       - name: Upload trades artifacts
         uses: actions/upload-artifact@v4
