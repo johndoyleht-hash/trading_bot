@@ -84,16 +84,34 @@ def main():
     )
     args = ap.parse_args()
 
+    # search order: requested folder, then plain 'runs'
+    candidates = [args.folder]
+    if args.folder != "runs":
+        candidates.append("runs")
+
+    def find_latest_for_pair_year(pair: str, year: int):
+        for base in candidates:
+            pat = f"{base}/{pair}/{year}/trades_*.csv"
+            path = (
+                find_numbered_latest(pat)
+                if args.use_latest
+                else next(iter(sorted(Path().glob(pat))), None)
+            )
+            if path is not None:
+                return path
+        return None
+
     pairs = [p.strip().upper() for p in args.pairs.split(",") if p.strip()]
     all_trades = []
 
     for pair in pairs:
-        pat = f"{args.folder}/{pair}/{args.year}/trades_*.csv"
-        path = find_numbered_latest(pat) if args.use_latest else next(
-            iter(sorted(Path().glob(pat))), None
-        )
+        path = find_latest_for_pair_year(pair, args.year)
         if path is None:
-            print(f"⚠️  No trades file for {pair} {args.year} under {args.folder}", file=sys.stderr)
+            print(
+                f"⚠️  No trades file for {pair} {args.year} under "
+                f"{' or '.join(candidates)}",
+                file=sys.stderr,
+            )
             continue
         try:
             df = load_trades_csv(path, pair)
@@ -106,7 +124,11 @@ def main():
         print("No trades loaded — nothing to do.", file=sys.stderr)
         sys.exit(1)
 
-    combo = pd.concat(all_trades, ignore_index=True).sort_values(["t", "pair"]).reset_index(drop=True)
+    combo = (
+        pd.concat(all_trades, ignore_index=True)
+        .sort_values(["t", "pair"])
+        .reset_index(drop=True)
+    )
 
     equity = args.start_equity + combo["pnl"].cumsum()
     pf = profit_factor(combo["pnl"])
@@ -115,10 +137,11 @@ def main():
 
     out_dir = Path(args.folder) / "portfolio" / str(args.year)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "combined_trades.csv").write_text(
-        combo.assign(equity=equity).to_csv(index=False)
-    )
-    pd.DataFrame({"t": combo["t"], "equity": equity}).to_csv(out_dir / "equity_curve.csv", index=False)
+    trades_out = out_dir / "combined_trades.csv"
+    eq_out = out_dir / "equity_curve.csv"
+
+    combo.assign(equity=equity).to_csv(trades_out, index=False)
+    pd.DataFrame({"t": combo["t"], "equity": equity}).to_csv(eq_out, index=False)
 
     # summary
     print("\n=== Portfolio summary ===")
@@ -128,8 +151,8 @@ def main():
     print(f"Cumulative Return: {cum_ret*100:.2f}%")
     print(f"Final Equity: ${equity.iloc[-1]:,.2f}")
     print(f"Max Drawdown: {mdd*100:.2f}%")
-    print(f"\nWrote combined trades -> {out_dir/'combined_trades.csv'}")
-    print(f"Wrote equity curve     -> {out_dir/'equity_curve.csv'}")
+    print(f"\nWrote combined trades -> {trades_out}")
+    print(f"Wrote equity curve     -> {eq_out}")
 
     # CI gates
     failed = False
