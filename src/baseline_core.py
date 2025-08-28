@@ -35,11 +35,18 @@ def _dump_config_fingerprint():
     print()
 
 # ========= Public entrypoint for runner =========
-def run_backtest(DATA_CSV_PATH=None, PAIR=None):
+def run_backtest(DATA_CSV_PATH=None, PAIR=None, **overrides):
     """
-    Called by scripts/baseline_pair_runner.py.
-    It overrides path/pair if provided, runs the core, and returns a results dict.
+    Called by scripts/baseline_pair_runner.py or paper_sim.py.
+    DATA_CSV_PATH / PAIR override the defaults.
+    Extra kwargs (RSI_WINDOW, ATR_P_LOW, etc.) update globals before run.
     """
+    # apply overrides onto module globals (if defined here)
+    g = globals()
+    for k, v in overrides.items():
+        if k in g:
+            g[k] = v
+
     return main(
         return_results=True,
         override_data_csv_path=DATA_CSV_PATH,
