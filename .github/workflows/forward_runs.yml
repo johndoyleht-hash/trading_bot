@@ -1,10 +1,10 @@
-name: forward_runs
+name: forward-runs
 
 on:
   workflow_dispatch:
     inputs:
       full_forward:
-        description: "Also run pytest forward/portfolio suite"
+        description: "Run full forward + portfolio suite?"
         required: false
         default: "true"
 
@@ -12,8 +12,8 @@ jobs:
   forward:
     runs-on: ubuntu-latest
     env:
+      # so scripts can `import src.*` when spawned via subprocess
       PYTHONPATH: ${{ github.workspace }}
-
     steps:
       - name: Checkout (with LFS)
         uses: actions/checkout@v4
@@ -28,7 +28,6 @@ jobs:
           git lfs checkout
           # quick sanity
           ls -lh data/clean/*/*/*_clean.csv | head -n 5 || true
-          head -n 2 $(ls data/clean/*/*/*_clean.csv | head -n 1) || true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,14 +37,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements.txt
 
-      - name: Paper-sim all pairs (2023–2025)
-        run: |
-          python3 scripts/paper_multi.py --year 2023 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
-          python3 scripts/paper_multi.py --year 2024 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
-          python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+      # --- Produce trades for all years we want to guard ---
+      - name: Paper-sim 2023
+        run: python3 scripts/paper_multi.py --year 2023 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
 
+      - name: Paper-sim 2024
+        run: python3 scripts/paper_multi.py --year 2024 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+
+      - name: Paper-sim 2025
+        run: python3 scripts/paper_multi.py --year 2025 --pairs EURUSD,GBPUSD,USDJPY --cfg_dir configs/forward
+
+      # --- Portfolio gates (fail the job if these don't pass) ---
       - name: Portfolio guard — 2024 (PF≥1.20, DD≤7%)
         run: |
           python3 scripts/portfolio_health.py \
@@ -77,30 +81,25 @@ jobs:
 
   forward_health:
     if: ${{ inputs.full_forward == 'true' }}
+    name: Forward health (pairs + portfolio)
     needs: forward
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout (with LFS)
         uses: actions/checkout@v4
         with:
           lfs: true
           fetch-depth: 0
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install test deps
+      - name: Install minimal test deps
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+          pip install -r requirements.txt || true
           pip install pytest pyyaml
-
       - name: Run forward tests
         run: pytest -q -m forward
-
       - name: Run portfolio tests
         run: pytest -q -m portfolio
