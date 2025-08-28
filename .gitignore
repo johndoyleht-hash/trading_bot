@@ -12,13 +12,9 @@ __pycache__/
 venv/
 
 # Data & outputs
-# ignore everything under data/
-data/
-# ...except clean datasets
-!data/clean/
-!data/clean/*/
-!data/clean/*/*/
-!data/clean/*/*/*_clean.csv
+# ignore everything under data, but keep the clean subtree
+/data/*
+!/data/clean/
 
 # ignore run outputs
 runs/
