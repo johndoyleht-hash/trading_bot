@@ -3,39 +3,49 @@
 import argparse
 import sys
 from pathlib import Path
+import inspect
+import yaml  # pyyaml
 
 # make 'src' importable when run as a script
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import yaml  # pyyaml
 import src.baseline_core as baseline  # noqa: E402
 
 
 def run_backtest_with_config(csv_path: Path, pair: str, config_path: Path):
     """
-    Load a forward YAML and call baseline.run_backtest with only the kwargs it expects.
-    IMPORTANT: Do NOT pass CONFIG_PATH (that caused CI errors previously).
+    Load a forward YAML and call baseline.run_backtest with only supported kwargs.
+    Extra keys in the YAML are ignored (warned about).
     """
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f) or {}
 
-    # Remove keys that baseline.run_backtest doesn't accept / we never use here
-    for k in ["CONFIG_PATH", "PAIR", "DATA_CSV_PATH"]:
+    # Always drop these
+    for k in ("CONFIG_PATH", "PAIR", "DATA_CSV_PATH"):
         cfg.pop(k, None)
 
-    # Primary call: keyword-style interface used by this repo
-    try:
-        return baseline.run_backtest(
-            DATA_CSV_PATH=str(csv_path),
-            PAIR=pair,
-            **cfg,
+    # Introspect allowed args from run_backtest
+    sig = inspect.signature(baseline.run_backtest)
+    allowed = set(sig.parameters.keys())
+
+    # Keep only supported keys; warn on ignored
+    clean_cfg = {k: v for k, v in cfg.items() if k in allowed}
+    dropped = sorted(set(cfg) - allowed)
+
+    if dropped:
+        print(
+            f"[paper_sim] ⚠️ ignored unsupported keys for {pair} "
+            f"({config_path.name}): {', '.join(dropped)}"
         )
-    except TypeError:
-        # Fallback: some environments might expose a positional signature
-        # (csv_path, pair, **cfg). Try that before giving up.
-        return baseline.run_backtest(str(csv_path), pair, **cfg)
+
+    # Call baseline.run_backtest with sanitized config
+    return baseline.run_backtest(
+        DATA_CSV_PATH=str(csv_path),
+        PAIR=pair,
+        **clean_cfg,
+    )
 
 
 def main():
@@ -59,17 +69,15 @@ def main():
     # Run and let baseline_core handle writing trades logs
     res = run_backtest_with_config(csv_path, pair, cfg_path)
 
-    # The baseline writes a dated trades CSV; we print where it went (for convenience)
-    # If baseline returns a path or object with the path, try to surface it:
+    # Try to surface the path to saved trades
     saved = None
-    for k in ("trades_csv", "trades_path", "trades_file", "path"):
-        if isinstance(res, dict) and k in res:
-            saved = res[k]
-            break
-
+    if isinstance(res, dict):
+        for k in ("trades_csv", "trades_path", "trades_file", "path"):
+            if k in res:
+                saved = res[k]
+                break
     if not saved:
-        # best effort: tell the folder where it should appear
-        saved = out_dir
+        saved = out_dir  # best guess
 
     print(f"[paper_sim] saved trades: {saved}")
 
