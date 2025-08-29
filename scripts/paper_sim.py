@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # scripts/paper_sim.py
-
 import argparse
-import sys
 from pathlib import Path
+import shutil
+import sys
 import yaml
 
-# Make 'src' importable when run as a script
+# Make 'src' importable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -14,68 +14,61 @@ if str(REPO_ROOT) not in sys.path:
 import src.baseline_core as baseline  # noqa: E402
 
 
-def load_yaml(path: Path) -> dict:
-    with open(path, "r") as f:
-        return yaml.safe_load(f) or {}
-
-
-def pick(cfg: dict, *keys, default=None):
-    """Return first present key (case-insensitive) from cfg."""
-    lower = {k.lower(): k for k in cfg.keys()}
-    for k in keys:
-        if k in cfg:
-            return cfg[k]
-        lk = k.lower()
-        if lk in lower:
-            return cfg[lower[lk]]
-    return default
-
-
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pair", required=True, help="FX pair, e.g. EURUSD")
+    ap.add_argument("--pair", required=True)
     ap.add_argument("--year", type=int, required=True)
-    ap.add_argument("--config", required=True, help="Path to *_forward.yaml")
+    ap.add_argument("--config", required=True, help="path to *_forward.yaml (or baseline yaml)")
     args = ap.parse_args()
 
     pair = args.pair.upper()
     year = int(args.year)
     cfg_path = Path(args.config)
 
-    # Clean OHLCV path for this pair/year
+    # Clean data CSV (produced by your conversion step)
     csv_path = Path("data/clean") / pair / str(year) / f"{pair}_1y_{year}_clean.csv"
 
-    # Load forward YAML (we only care about the 4 knobs)
-    cfg = load_yaml(cfg_path)
-    rsi_window  = pick(cfg, "RSI_WINDOW", "rsi_window")
-    rsi_buy_max = pick(cfg, "RSI_BUY_MAX", "rsi_buy_max")
-    rsi_sell_min = pick(cfg, "RSI_SELL_MIN", "rsi_sell_min")
-    atr_p_low   = pick(cfg, "ATR_P_LOW", "atr_p_low")
+    # Load YAML (allow empty)
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
 
-    # Build kwargs only for values that exist (avoids overriding defaults with None)
-    knob_kwargs = {}
-    if rsi_window is not None:
-        knob_kwargs["RSI_WINDOW"] = int(rsi_window)
-    if rsi_buy_max is not None:
-        knob_kwargs["RSI_BUY_MAX"] = float(rsi_buy_max)
-    if rsi_sell_min is not None:
-        knob_kwargs["RSI_SELL_MIN"] = float(rsi_sell_min)
-    if atr_p_low is not None:
-        knob_kwargs["ATR_P_LOW"] = float(atr_p_low)
+    # Drop purely-informational keys if present
+    for k in ("CONFIG_PATH", "PAIR", "DATA_CSV_PATH"):
+        cfg.pop(k, None)
 
-    # Run core backtest with explicit CSV path (no 'latest.csv' anywhere)
-    res = baseline.run_backtest(
-        DATA_CSV_PATH=str(csv_path),
-        PAIR=pair,
-        **knob_kwargs,
-    )
+    # Show what we're about to apply (helps sanity-check)
+    if cfg:
+        print(f"[paper_sim] overrides from {cfg_path.name}:")
+        for k in sorted(cfg.keys()):
+            print(f"  - {k}: {cfg[k]}")
+    else:
+        print(f"[paper_sim] no overrides in {cfg_path.name} (using baseline_core defaults)")
 
-    # Surface the trades CSV path for downstream steps & humans
+    # Run the backtest; baseline.run_backtest applies **cfg to module knobs
+    res = baseline.run_backtest(DATA_CSV_PATH=str(csv_path), PAIR=pair, **cfg)
+
+    # Discover saved trades file (baseline_core returns it in res["trades_csv"])
     saved = None
     if isinstance(res, dict):
         saved = res.get("trades_csv")
-    print(f"[paper_sim] saved trades: {saved or '(engine returned no path)'}")
 
+    if not saved:
+        # fall back to the expected folder
+        out_dir = Path("runs") / "live_sim" / pair / str(year)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        saved = out_dir
+
+    print(f"[paper_sim] saved trades: {saved}")
+
+    # Maintain a deterministic pointer for portfolio scripts (latest.csv)
+    try:
+        trades_path = Path(saved)
+        if trades_path.is_file():
+            latest = trades_path.parent / "latest.csv"
+            shutil.copyfile(trades_path, latest)
+            print(f"[paper_sim] updated: {latest}")
+    except Exception as e:
+        print(f"[paper_sim] note: could not update latest.csv -> {e}")
 
 if __name__ == "__main__":
     main()
