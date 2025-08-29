@@ -35,17 +35,43 @@ def _dump_config_fingerprint():
     print()
 
 # ========= Public entrypoint for runner =========
-def run_backtest(DATA_CSV_PATH=None, PAIR=None, **overrides):
+def run_backtest(DATA_CSV_PATH=None, PAIR=None, **kwargs):
     """
-    Called by scripts/baseline_pair_runner.py or paper_sim.py.
-    DATA_CSV_PATH / PAIR override the defaults.
-    Extra kwargs (RSI_WINDOW, ATR_P_LOW, etc.) update globals before run.
+    Called by scripts/baseline_pair_runner.py (and paper_sim.py).
+    Applies YAML overrides by updating module-level tunables, then runs core.
     """
-    # apply overrides onto module globals (if defined here)
+    # List of tunables we allow YAML to override
+    OVERRIDABLE = {
+        # exits & holds
+        "ATR_MULT_SL","ATR_MULT_TP","MAX_BARS_HOLD",
+        # RSI & windowed-confirmation
+        "RSI_BUY_MAX","RSI_SELL_MIN","RSI_WINDOW_AHEAD",
+        # ATR percentile gate
+        "ATR_BAND_LOOKBACK","ATR_P_LOW","ATR_P_HIGH","ATR_MIN_WARMUP",
+        # EMA trend recency
+        "EMA_TREND_RECENT",
+        # breakeven
+        "USE_BREAKEVEN","BE_MULT","BE_MIN_BARS_HELD",
+        # session/calendar filters
+        "USE_SESSION_FILTER","SESSION_START_HHMM","SESSION_END_HHMM",
+        "TRADE_WEEKDAYS_ONLY","EXCLUDE_UTC_HOURS","EXCLUDE_WEEKDAYS",
+        # long-combo guard + April tightening
+        "DISABLE_LONG_COMBO","RSI_LONG_BAD_CUTOFF",
+        "USE_APRIL_ATR_TIGHTENING","APRIL_ATR_P_LOW",
+        # risk & engine
+        "ACCOUNT_START","RISK_PER_TRADE","MACD_EPS",
+        "FAST_MODE","LOG_TRADES","PROGRESS_EVERY",
+        # drawdown guards
+        "MAX_DAILY_DD","MAX_TOTAL_DD",
+    }
+
     g = globals()
-    for k, v in overrides.items():
-        if k in g:
-            g[k] = v
+    for k, v in kwargs.items():
+        if k in OVERRIDABLE and k in g:
+            # normalize list/tuple -> set for set-like options
+            if k in ("EXCLUDE_UTC_HOURS", "EXCLUDE_WEEKDAYS") and isinstance(v, (list, tuple, set)):
+                v = set(v)
+            g[k] = v  # apply override
 
     return main(
         return_results=True,
@@ -120,6 +146,30 @@ MAX_TOTAL_DD    = 0.07
 
 # When True, suppress printing (used when called from the runner)
 SILENT = False
+
+# ======== Add this helper near the top (after the globals are defined) ========
+_OVERRIDABLE = {
+    "ACCOUNT_START", "RISK_PER_TRADE",
+    "ATR_MULT_SL", "ATR_MULT_TP", "MAX_BARS_HOLD",
+    "RSI_BUY_MAX", "RSI_SELL_MIN", "RSI_WINDOW_AHEAD",
+    "ATR_BAND_LOOKBACK", "ATR_P_LOW", "ATR_P_HIGH", "ATR_MIN_WARMUP",
+    "EMA_TREND_RECENT",
+    "USE_BREAKEVEN", "BE_MULT", "BE_MIN_BARS_HELD",
+    "USE_SESSION_FILTER", "SESSION_START_HHMM", "SESSION_END_HHMM",
+    "TRADE_WEEKDAYS_ONLY",
+    "EXCLUDE_UTC_HOURS", "EXCLUDE_WEEKDAYS",
+    "DISABLE_LONG_COMBO", "RSI_LONG_BAD_CUTOFF",
+    "USE_APRIL_ATR_TIGHTENING", "APRIL_ATR_P_LOW",
+    "MAX_DAILY_DD", "MAX_TOTAL_DD",
+    "FAST_MODE", "LOG_TRADES", "PROGRESS_EVERY",
+}
+
+def _apply_overrides(overrides: dict):
+    """Apply YAML/CLI overrides to module-level constants (safe list)."""
+    g = globals()
+    for k, v in overrides.items():
+        if k in _OVERRIDABLE and k in g:
+            g[k] = v
 
 
 def atr_band_ok_calendar(dt, atr, rp):
@@ -767,8 +817,3 @@ def main(return_results=False, override_data_csv_path=None, override_pair=None):
             "max_dd": max_drawdown,
         }
     }
-
-    # In library mode (runner), return the dict; when run as a script, we still return it too.
-    return results
-    # Local/manual run uses default DATA_CSV_PATH above
-    run_backtest(DATA_CSV_PATH=DATA_CSV_PATH, PAIR="EURUSD")
